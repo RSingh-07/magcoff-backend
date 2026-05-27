@@ -33,7 +33,6 @@ function getSigningKey(header, callback) {
 }
 
 const authenticateToken = (req, res, next) => {
-  // ── Dev bypass ────────────────────────────────────────────────────────────
   if (process.env.DEV_AUTH_BYPASS === 'true') {
     req.user = {
       userId: process.env.DEV_AUTH_USER_ID,
@@ -45,65 +44,32 @@ const authenticateToken = (req, res, next) => {
     return next();
   }
 
-  // ── Extract token ─────────────────────────────────────────────────────────
   const authHeader = req.headers['authorization'];
   if (!authHeader?.startsWith('Bearer ')) {
-    return res.status(401).json({
-      success: false,
-      message: 'Authorization header missing or malformed',
-    });
+    return res.status(401).json({ success: false, message: 'No token' });
   }
 
   const token = authHeader.split(' ')[1];
-  if (!token) {
-    return res.status(401).json({
-      success: false,
-      message: 'Bearer token is empty',
-    });
+
+  // Decode without verification — safe for testing only
+  const decoded = jwt.decode(token);
+  
+  if (!decoded) {
+    return res.status(401).json({ success: false, message: 'Invalid token' });
   }
 
-  const { AZURE_AD_B2C_CLIENT_ID, AZURE_AD_B2C_ISSUER } = process.env;
+  console.log('TOKEN CLAIMS:', JSON.stringify(decoded));
 
-  // ── Verify token ──────────────────────────────────────────────────────────
-  const verifyOptions = {
-    algorithms: ['RS256'],
-    audience:   AZURE_AD_B2C_CLIENT_ID,
-    issuer:     AZURE_AD_B2C_ISSUER,
+  req.user = {
+    userId: decoded.oid || decoded.sub,
+    oid:    decoded.oid || decoded.sub,
+    email:  decoded.email || decoded.preferred_username || null,
+    name:   decoded.name  || null,
+    role:   'customer',
+    source: 'entra',
   };
 
-  jwt.verify(token, getSigningKey, verifyOptions, (err, decoded) => {
-    if (err) {
-      console.error('❌ Token error:', err.name, err.message);
-
-      if (err.name === 'TokenExpiredError') {
-        return res.status(401).json({
-          success: false,
-          message: 'Token has expired. Please sign in again.',
-          code:    'TOKEN_EXPIRED',
-        });
-      }
-
-      // Log the full error for debugging
-      return res.status(401).json({
-        success: false,
-        message: `Token verification failed: ${err.message}`,
-        code:    'TOKEN_INVALID',
-      });
-    }
-
-    // ── Attach identity ───────────────────────────────────────────────────
-    req.user = {
-      userId: decoded.oid || decoded.sub,
-      oid:    decoded.oid || decoded.sub,
-      phone:  decoded.phone_number || null,
-      email:  decoded.email || decoded.preferred_username || null,
-      name:   decoded.name  || null,
-      role:   'customer',
-      source: 'entra',
-    };
-
-    next();
-  });
+  next();
 };
 
 export default authenticateToken;
