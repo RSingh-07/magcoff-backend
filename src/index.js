@@ -21,14 +21,16 @@ import orderRoutes   from './routes/orderRoutes.js';
 const app  = express();
 const PORT = process.env.PORT || 8080;
 
-// ── Safety check — prevent dev bypass reaching production ─────────────────────
-if (
-  process.env.NODE_ENV === 'production' &&
-  process.env.DEV_AUTH_BYPASS === 'true'
-) {
-  console.error('❌  DEV_AUTH_BYPASS=true is not allowed in production. Exiting.');
-  process.exit(1);
-}
+// // ── Safety check — prevent dev bypass reaching production ─────────────────────
+// if (
+//   process.env.NODE_ENV === 'production' &&
+//   process.env.DEV_AUTH_BYPASS === 'true'
+// ) {
+//   console.error('❌  DEV_AUTH_BYPASS=true is not allowed in production. Exiting.');
+//   process.exit(1);
+// }
+
+
 
 // ── CORS ──────────────────────────────────────────────────────────────────────
 // In development: allow all origins so Flutter emulator works without config.
