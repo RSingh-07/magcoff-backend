@@ -119,6 +119,7 @@ const authenticateToken = (req, res, next) => {
     algorithms: ['RS256'],        // B2C always signs with RS256
     audience:   AZURE_AD_B2C_CLIENT_ID,
     issuer:     AZURE_AD_B2C_ISSUER,
+    ignoreExpiration: false,
   };
 
   jwt.verify(token, getSigningKey, verifyOptions, (err, decoded) => {
