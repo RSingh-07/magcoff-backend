@@ -40,7 +40,7 @@ const userController = {
   // GET /users/profile
   async getProfile(req, res) {
     try {
-      const { userId } = req.user;
+      const userId = req.user.oid || req.user.userId || req.user.sub;
       const data = await userService.getProfile(userId);
       res.json({ success: true, data });
     } catch (err) {
@@ -48,11 +48,20 @@ const userController = {
     }
   },
 
-  // POST /users/register-social  ← NEW
+  // POST /users/register-social
   async registerSocial(req, res) {
     try {
       const { name, email } = req.body;
-      const azureId = req.user.userId; // DEV_BYPASS sets userId, not sub
+
+      // Works for Entra (oid), dev bypass (userId), and B2C (sub)
+      const azureId = req.user.oid || req.user.userId || req.user.sub;
+
+      if (!azureId) {
+        return res.status(401).json({
+          success: false,
+          message: 'Could not determine user identity from token',
+        });
+      }
 
       if (!name || !email) {
         return res.status(400).json({
