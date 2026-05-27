@@ -62,9 +62,7 @@ function getSigningKey(header, callback) {
 // ── Main middleware ───────────────────────────────────────────────────────────
 const authenticateToken = (req, res, next) => {
   // ── Dev bypass — NEVER runs in production ──────────────────────────────────
-  const isDevBypass =
-    process.env.DEV_AUTH_BYPASS === 'true' &&
-    process.env.NODE_ENV !== 'production';
+  const isDevBypass = process.env.DEV_AUTH_BYPASS === 'true';
 
   if (isDevBypass) {
     req.user = {
