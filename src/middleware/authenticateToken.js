@@ -33,6 +33,7 @@ function getSigningKey(header, callback) {
 }
 
 const authenticateToken = (req, res, next) => {
+  // ── Dev bypass ────────────────────────────────────────────────────────────
   if (process.env.DEV_AUTH_BYPASS === 'true') {
     req.user = {
       userId: process.env.DEV_AUTH_USER_ID,
@@ -44,32 +45,63 @@ const authenticateToken = (req, res, next) => {
     return next();
   }
 
+  // ── Extract token ─────────────────────────────────────────────────────────
   const authHeader = req.headers['authorization'];
   if (!authHeader?.startsWith('Bearer ')) {
-    return res.status(401).json({ success: false, message: 'No token' });
+    return res.status(401).json({
+      success: false,
+      message: 'Authorization header missing or malformed',
+    });
   }
 
   const token = authHeader.split(' ')[1];
-
-  // Decode without verification — safe for testing only
-  const decoded = jwt.decode(token);
-  
-  if (!decoded) {
-    return res.status(401).json({ success: false, message: 'Invalid token' });
+  if (!token) {
+    return res.status(401).json({
+      success: false,
+      message: 'Bearer token is empty',
+    });
   }
 
-  console.log('TOKEN CLAIMS:', JSON.stringify(decoded));
-
-  req.user = {
-    userId: decoded.oid || decoded.sub,
-    oid:    decoded.oid || decoded.sub,
-    email:  decoded.email || decoded.preferred_username || null,
-    name:   decoded.name  || null,
-    role:   'customer',
-    source: 'entra',
+  // ── Verify token signature ────────────────────────────────────────────────
+  // Issuer for AAD accessToken is https://sts.windows.net/<tenantId>/
+  // Audience is Microsoft Graph (00000003-...) — we skip audience check
+  const verifyOptions = {
+    algorithms: ['RS256'],
+    issuer:     process.env.AZURE_AD_B2C_ISSUER,
+    // No audience check — AAD accessToken audience is Microsoft Graph
   };
 
-  next();
+  jwt.verify(token, getSigningKey, verifyOptions, (err, decoded) => {
+    if (err) {
+      console.error('❌ Token error:', err.name, err.message);
+
+      if (err.name === 'TokenExpiredError') {
+        return res.status(401).json({
+          success: false,
+          message: 'Token has expired. Please sign in again.',
+          code:    'TOKEN_EXPIRED',
+        });
+      }
+
+      return res.status(401).json({
+        success: false,
+        message: `Token verification failed: ${err.message}`,
+        code:    'TOKEN_INVALID',
+      });
+    }
+
+    // ── Attach identity ───────────────────────────────────────────────────
+    req.user = {
+      userId: decoded.oid || decoded.sub,
+      oid:    decoded.oid || decoded.sub,
+      email:  decoded.email || decoded.preferred_username || null,
+      name:   decoded.name  || null,
+      role:   'customer',
+      source: 'entra',
+    };
+
+    next();
+  });
 };
 
 export default authenticateToken;
