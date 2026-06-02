@@ -13,7 +13,7 @@ function getJwksClient() {
   }
 
   _jwksClient = jwksClient({
-    jwksUri: AZURE_AD_B2C_JWKS_URI,
+    jwksUri: `https://login.microsoftonline.com/c508c321-b10d-4a0c-ab40-a5783f174f4d/discovery/v2.0/keys`,
     cache: true,
     cacheMaxEntries: 5,
     cacheMaxAge: 600000,
@@ -98,7 +98,10 @@ const authenticateToken = (req, res, next) => {
 
   const verifyOptions = {
     algorithms: ['RS256'],
-    issuer: process.env.AZURE_AD_B2C_ISSUER,
+    issuer: [
+  `https://login.microsoftonline.com/c508c321-b10d-4a0c-ab40-a5783f174f4d/v2.0`,
+  `https://sts.windows.net/c508c321-b10d-4a0c-ab40-a5783f174f4d/`
+],
     ignoreExpiration: false,
   };
 
