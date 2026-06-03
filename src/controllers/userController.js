@@ -1,9 +1,9 @@
 import userService from '../services/userService.js';
-import User from '../models/User.js';
+
+const getOid = (req) => req.user.oid || req.user.userId || req.user.sub;
 
 const userController = {
-
-  // POST /users/register — DEPRECATED
+  // ── Deprecated ─────────────────────────────────────────────────────────────
   async register(req, res) {
     try {
       const { phone, name, email, password } = req.body;
@@ -20,7 +20,6 @@ const userController = {
     }
   },
 
-  // POST /users/login — DEPRECATED
   async login(req, res) {
     try {
       const { phone, password } = req.body;
@@ -37,25 +36,22 @@ const userController = {
     }
   },
 
-  // GET /users/profile
+  // ── GET /users/profile ──────────────────────────────────────────────────────
   async getProfile(req, res) {
     try {
-      const userId = req.user.oid || req.user.userId || req.user.sub;
-      const data = await userService.getProfile(userId);
+      const data = await userService.getProfile(getOid(req));
       res.json({ success: true, data });
     } catch (err) {
-      res.status(404).json({ success: false, message: err.message });
+      // 404 if user not registered yet, 500 for anything else
+      const status = err.message.includes('No user found') ? 404 : 500;
+      res.status(status).json({ success: false, message: err.message });
     }
   },
 
-  // POST /users/register-social
+  // ── POST /users/register-social ─────────────────────────────────────────────
   async registerSocial(req, res) {
     try {
-      const { name, email } = req.body;
-
-      // Works for Entra (oid), dev bypass (userId), and B2C (sub)
-      const azureId = req.user.oid || req.user.userId || req.user.sub;
-
+      const azureId = getOid(req);
       if (!azureId) {
         return res.status(401).json({
           success: false,
@@ -63,6 +59,7 @@ const userController = {
         });
       }
 
+      const { name, email } = req.body;
       if (!name || !email) {
         return res.status(400).json({
           success: false,
@@ -70,24 +67,17 @@ const userController = {
         });
       }
 
-      // Check if already registered
-      let user = await User.findOne({ azureId });
-      if (user) {
-        return res.status(200).json({ success: true, data: user });
-      }
-
-      // Save to MongoDB
-      user = await User.create({
+      const data = await userService.registerOrGetSocial({
         azureId,
         name,
         email,
         phone: req.user.phone || '',
       });
 
-      res.status(201).json({ success: true, data: user });
-    } catch (error) {
-      console.error('registerSocial error:', error);
-      res.status(500).json({ success: false, message: error.message });
+      res.status(201).json({ success: true, data });
+    } catch (err) {
+      console.error('registerSocial error:', err);
+      res.status(500).json({ success: false, message: err.message });
     }
   },
 };
