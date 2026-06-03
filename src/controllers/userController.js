@@ -58,7 +58,7 @@ const userController = {
         });
       }
 
-      const { name, email } = req.body;
+      const { name, email, phone } = req.body;   // ← phone from body, not JWT
       if (!name || !email) {
         return res.status(400).json({
           success: false,
@@ -70,7 +70,7 @@ const userController = {
         azureId,
         name,
         email,
-        phone: req.user.phone || '',
+        phone: phone || '',   // ← was req.user.phone (always empty from JWT)
       });
 
       res.status(201).json({ success: true, data });

@@ -15,7 +15,6 @@ const tierFor = (points) => {
   return 'Member';
 };
 
-// Resolve Azure OID → full User document
 async function resolveUserByOid(oid) {
   const user = await userRepository.findByAzureId(oid);
   if (!user) throw new Error(`No user found for Azure OID: ${oid}. Please register first.`);
@@ -47,35 +46,50 @@ const userService = {
 
   // ── GET /users/profile ────────────────────────────────────────────────────
   async getProfile(oid) {
-    // Look up by azureId, not _id
     const user = await resolveUserByOid(oid);
 
-    // Order stats — query directly by internal _id
+    // Orders store userId as a string, but user._id from .lean() is ObjectId.
+    // Match both forms so it works regardless of how old orders were saved.
+    const userIdStr = user._id.toString();
+
     const orderAgg = await Order.aggregate([
-      { $match: { userId: user._id } },
-      { $group: { _id: null, count: { $sum: 1 }, total: { $sum: '$total' } } },
+      {
+        $match: {
+          $or: [
+            { userId: userIdStr },
+            { userId: user._id },
+          ],
+        },
+      },
+      {
+        $group: {
+          _id:   null,
+          count: { $sum: 1 },
+          total: { $sum: '$total' },
+        },
+      },
     ]);
 
-    const orderCount = orderAgg[0]?.count     ?? 0;
-    const totalSpent = orderAgg[0]?.total     ?? 0;
-
-    const points = Math.floor(totalSpent / 10);
-    const tier   = tierFor(points);
-
-    const { password: _pw, ...safe } = user;
+    const orderCount = orderAgg[0]?.count ?? 0;
+    const totalSpent = orderAgg[0]?.total ?? 0;
+    const points     = Math.floor(totalSpent / 10);
+    const tier       = tierFor(points);
 
     return {
-      ...safe,
+      _id:          user._id,
+      name:         user.name,
+      phone:        user.phone  ?? '',
+      email:        user.email  ?? '',
+      azureId:      user.azureId,
       orderCount,
       totalSpent:   Math.round(totalSpent * 100) / 100,
       points,
       tier,
-      wishlistCount: 0,   // placeholder until wishlist collection exists
+      wishlistCount: 0,
     };
   },
 
   // ── POST /users/register-social ───────────────────────────────────────────
-  // Upsert: create user if not exists, return existing if already registered.
   async registerOrGetSocial({ azureId, name, email, phone }) {
     let user = await userRepository.findByAzureId(azureId);
     if (user) return user;
@@ -83,8 +97,8 @@ const userService = {
     user = await userRepository.create({
       azureId,
       name,
-      email:  email  || '',
-      phone:  phone  || '',
+      email: email || '',
+      phone: phone || '',
     });
 
     return user;
