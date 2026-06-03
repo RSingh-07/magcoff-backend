@@ -1,7 +1,14 @@
 import orderRepository from '../repositories/orderRepository.js';
 import cartRepository  from '../repositories/cartRepository.js';
+import User            from '../models/User.js';
 
-// MGC + YYMMDD + random 3-digit sequence
+// Resolve Azure OID → internal MongoDB _id
+async function resolveUserId(oid) {
+  const user = await User.findOne({ azureId: oid }).lean();
+  if (!user) throw new Error(`No user found for Azure OID: ${oid}. Please register first.`);
+  return user._id;
+}
+
 function generateOrderId() {
   const now = new Date();
   const ymd = `${String(now.getFullYear()).slice(2)}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
@@ -10,13 +17,12 @@ function generateOrderId() {
 }
 
 const orderService = {
-  // Place order — converts active cart into an order document
-  async placeOrder(userId, paymentMethod, transactionId = null) {
-    const cart = await cartRepository.findActiveByUserId(userId);
+  async placeOrder(oid, paymentMethod, transactionId = null) {
+    const userId = await resolveUserId(oid);
+    const cart   = await cartRepository.findActiveByUserId(userId);
     if (!cart)              throw new Error('No active cart to checkout');
     if (!cart.items.length) throw new Error('Cart is empty');
 
-    // Map cart items → order lines (price snapshot)
     const lines = cart.items.map(i => ({
       productId: i.productId,
       name:      i.name,
@@ -41,13 +47,15 @@ const orderService = {
       status:        transactionId  ? 'completed' : 'pending',
     });
 
-    // Mark cart as checked out
     await cartRepository.markCheckedOut(cart._id);
-
     return order;
   },
 
-  async getByUserId(userId)   { return orderRepository.findByUserId(userId); },
+  async getByUserId(oid) {
+    const userId = await resolveUserId(oid);
+    return orderRepository.findByUserId(userId);
+  },
+
   async getByOrderId(orderId) {
     const order = await orderRepository.findByOrderId(orderId);
     if (!order) throw new Error(`Order not found: ${orderId}`);

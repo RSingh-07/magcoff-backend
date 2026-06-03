@@ -3,30 +3,24 @@ import orderService from '../services/orderService.js';
 const getUserId = (req) => req.user.oid || req.user.userId || req.user.sub;
 
 const orderController = {
-
   async placeOrder(req, res) {
     try {
-      const userId = getUserId(req);
       const { paymentMethod, transactionId } = req.body;
       if (!paymentMethod) {
-        return res.status(400).json({
-          success: false,
-          message: 'paymentMethod is required',
-        });
+        return res.status(400).json({ success: false, message: 'paymentMethod is required' });
       }
       const data = await orderService.placeOrder(
-        userId, paymentMethod, transactionId,
+        getUserId(req), paymentMethod, transactionId,
       );
       res.status(201).json({ success: true, data });
     } catch (err) {
-      res.status(400).json({ success: false, message: err.message });
+      res.status(500).json({ success: false, message: err.message });
     }
   },
 
   async getByUser(req, res) {
     try {
-      const userId = getUserId(req);
-      const data = await orderService.getByUserId(userId);
+      const data = await orderService.getByUserId(getUserId(req));
       res.json({ success: true, count: data.length, data });
     } catch (err) {
       res.status(500).json({ success: false, message: err.message });
