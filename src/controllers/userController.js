@@ -42,7 +42,6 @@ const userController = {
       const data = await userService.getProfile(getOid(req));
       res.json({ success: true, data });
     } catch (err) {
-      // 404 if user not registered yet, 500 for anything else
       const status = err.message.includes('No user found') ? 404 : 500;
       res.status(status).json({ success: false, message: err.message });
     }
@@ -81,5 +80,5 @@ const userController = {
     }
   },
 };
-export default { register, login, getProfile, registerSocial };
+
 export default userController;
