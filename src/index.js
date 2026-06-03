@@ -18,6 +18,12 @@ import userRoutes    from './routes/userRoutes.js';
 import cartRoutes    from './routes/cartRoutes.js';
 import orderRoutes   from './routes/orderRoutes.js';
 
+import notificationRoutes from './routes/notificationRoutes.js';
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/wishlist', wishlistRoutes);
+
+
+
 const app  = express();
 const PORT = process.env.PORT || 8080;
 
