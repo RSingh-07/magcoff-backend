@@ -83,7 +83,7 @@ const authenticateToken = (req, res, next) => {
   const verifyOptions = {
     algorithms: ['RS256'],
     issuer: process.env.AZURE_AD_B2C_ISSUER,   // ← reads from .env
-    audience: `api://${process.env.AZURE_AD_B2C_CLIENT_ID}`,
+    audience: process.env.AZURE_AD_B2C_CLIENT_ID,
     ignoreExpiration: false,
   };
 
