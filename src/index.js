@@ -7,6 +7,7 @@ import 'dotenv/config';
 import express  from 'express';
 import cors     from 'cors';
 import mongoose from 'mongoose';
+import authenticateToken from './middleware/authenticateToken.js';
 
 import productRoutes      from './routes/productRoutes.js';
 import userRoutes         from './routes/userRoutes.js';
@@ -64,12 +65,15 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 // ── Routes ────────────────────────────────────────────────────────────────────
-app.use('/products',         productRoutes);
-app.use('/users',            userRoutes);
-app.use('/cart',             cartRoutes);
-app.use('/orders',           orderRoutes);
-app.use('/api/notifications', notificationRoutes);
-app.use('/api/wishlist',      wishlistRoutes);
+// Public routes (no auth needed)
+app.use('/products', productRoutes);
+
+// Protected routes (auth required)
+app.use('/users',             authenticateToken, userRoutes);
+app.use('/cart',              authenticateToken, cartRoutes);
+app.use('/orders',            authenticateToken, orderRoutes);
+app.use('/api/notifications', authenticateToken, notificationRoutes);
+app.use('/api/wishlist',      authenticateToken, wishlistRoutes);
 
 // ── 404 ───────────────────────────────────────────────────────────────────────
 app.use((req, res) => {
