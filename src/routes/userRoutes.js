@@ -12,9 +12,6 @@ router.post('/login',    userController.login);
 // ── Protected routes ──────────────────────────────────────────────────────────
 // GET /users/profile  (was: GET /users/:userId/profile)
 // userId now comes from verified token — no longer in the URL
-router.get('/profile', authenticateToken, userController.getProfile);
-
-// ── Social / B2C Registration ─────────────────────────────────────────────────
-router.post('/register-social', authenticateToken, userController.registerSocial);
+app.use('/users', authenticateToken, userRoutes);
 
 export default router;
