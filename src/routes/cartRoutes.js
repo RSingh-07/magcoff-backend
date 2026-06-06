@@ -14,5 +14,6 @@ router.post('/add',              cartController.addItem);
 router.post('/remove',           cartController.removeItem);
 router.post('/update-quantity',  cartController.updateQuantity);
 router.post('/apply-coupon',     cartController.applyCoupon);
+router.post('/negotiate', cartController.negotiate);
 
 export default router;

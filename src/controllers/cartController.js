@@ -1,4 +1,5 @@
 import cartService from '../services/cartService.js';
+import { generateSignalRCredentials } from '../services/signalRService.js';
 
 const getUserId = (req) => req.user.oid || req.user.userId || req.user.sub;
 
@@ -67,6 +68,22 @@ const cartController = {
       res.json({ success: true, data });
     } catch (err) {
       res.status(500).json({ success: false, message: err.message });
+    }
+  },
+
+  // ── SignalR Negotiate ─────────────────────────────────────────────────────
+  async negotiate(req, res) {
+    try {
+      const userId = getUserId(req);
+      console.log('🔄 Negotiating SignalR for user:', userId);
+
+      const credentials = generateSignalRCredentials(userId);
+      console.log('✅ SignalR negotiation successful');
+
+      return res.status(200).json({ success: true, ...credentials });
+    } catch (err) {
+      console.error('❌ SignalR negotiation failed:', err.message);
+      return res.status(500).json({ success: false, message: err.message });
     }
   },
 };
