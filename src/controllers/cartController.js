@@ -80,7 +80,8 @@ const cartController = {
       const credentials = generateSignalRCredentials(userId);
       console.log('✅ SignalR negotiation successful');
 
-      return res.status(200).json({ success: true, ...credentials });
+      // Flutter expects: { url, accessToken }
+      return res.status(200).json(credentials);
     } catch (err) {
       console.error('❌ SignalR negotiation failed:', err.message);
       return res.status(500).json({ success: false, message: err.message });
@@ -88,22 +89,38 @@ const cartController = {
   },
 
   // ── Link physical cart to this user's SignalR group ───────────────────────
+  // Body: { cartId: string, connectionId: string }
+  //
+  // connectionId is the real Azure SignalR WebSocket connection ID that
+  // Flutter reads from hubConnection.connectionId after connecting.
+  // It looks like: "abc123def456..." — NOT the user's Azure OID.
   async linkCart(req, res) {
     try {
-      const { cartId } = req.body;
+      const { cartId, connectionId } = req.body;
+
       if (!cartId) {
         return res.status(400).json({ success: false, message: 'cartId is required' });
+      }
+      if (!connectionId) {
+        return res.status(400).json({ success: false, message: 'connectionId is required' });
       }
 
       const userId = getUserId(req);
       console.log(`🔗 Linking cart ${cartId} for user ${userId}`);
+      console.log(`🔌 SignalR connectionId: ${connectionId}`);
 
-      // Join the SignalR group named after this cartId so broadcasts
-      // from the Jetson reach only this user's connection.
-      await addUserToGroup(userId, cartId);
+      // Group name for this cart — Jetson will broadcast to this group
+      const groupName = `cart-${cartId}`;
 
-      console.log(`✅ Cart ${cartId} linked to user ${userId}`);
-      return res.status(200).json({ success: true, cartId });
+      // Add the Flutter client's actual WebSocket connection to the group
+      await addUserToGroup(connectionId, groupName);
+
+      console.log(`✅ Connection ${connectionId} added to group ${groupName}`);
+      return res.status(200).json({
+        success: true,
+        cartId,
+        groupName,
+      });
     } catch (err) {
       console.error('❌ Cart linking failed:', err.message);
       return res.status(500).json({ success: false, message: err.message });
