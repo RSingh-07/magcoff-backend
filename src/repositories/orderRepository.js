@@ -1,9 +1,7 @@
 import Order from '../models/Order.js';
-import { resolveUserId } from '../utils/resolveUserId.js';
 
 const orderRepository = {
-  async findByUserId(oid) {
-    const userId = await resolveUserId(oid);   // OID → MongoDB ObjectId
+  async findByUserId(userId) {   // receives MongoDB ObjectId from orderService
     return Order.find({ userId }).sort({ createdAt: -1 }).lean();
   },
 
