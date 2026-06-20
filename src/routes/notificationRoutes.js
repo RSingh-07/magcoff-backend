@@ -1,81 +1,24 @@
 // src/routes/notificationRoutes.js
+//
+// NOTE: previously this file defined its route logic inline and read
+// req.user.id directly in each handler. req.user.id was never set by
+// authenticateToken.js (only .oid/.userId/.sub are), so every device-token
+// write/read here was silently operating on userId: undefined. This has
+// been fixed by routing through notificationController, which resolves the
+// authenticated user the same way cartController/orderController do.
+//
+// The unregister handler also previously ignored whether a matching
+// document existed before reporting success (Known Issue #8) — that is
+// now surfaced via notificationService.unregisterToken.
+
 import express from 'express';
 import authenticateToken from '../middleware/authenticateToken.js';
-import DeviceToken from '../models/deviceToken.js';
+import notificationController from '../controllers/notificationController.js';
 
 const router = express.Router();
 
-// ── POST /api/notifications/register ─────────────────────────────────────────
-// Called by Flutter when user enables notifications.
-// Body: { token: string, platform: 'android' | 'ios' }
-router.post('/register', authenticateToken, async (req, res) => {
-  try {
-    const { token, platform } = req.body;
-    const userId = req.user.id;
-
-    if (!token || !platform) {
-      return res.status(400).json({
-        success: false,
-        message: 'token and platform are required',
-      });
-    }
-
-    // Upsert — if token already exists update userId + enabled flag
-    await DeviceToken.findOneAndUpdate(
-      { token },
-      {
-        userId,
-        platform,
-        enabled: true,
-        lastSeen: new Date(),
-      },
-      { upsert: true, new: true }
-    );
-
-    return res.json({ success: true, message: 'Device token registered' });
-  } catch (err) {
-    console.error('❌ Register token error:', err);
-    return res.status(500).json({ success: false, message: 'Server error' });
-  }
-});
-
-// ── DELETE /api/notifications/unregister ─────────────────────────────────────
-// Called by Flutter when user disables notifications.
-// Body: { token: string }
-router.delete('/unregister', authenticateToken, async (req, res) => {
-  try {
-    const { token } = req.body;
-
-    if (!token) {
-      return res.status(400).json({ success: false, message: 'token is required' });
-    }
-
-    await DeviceToken.findOneAndUpdate(
-      { token },
-      { enabled: false }
-    );
-
-    return res.json({ success: true, message: 'Device token unregistered' });
-  } catch (err) {
-    console.error('❌ Unregister token error:', err);
-    return res.status(500).json({ success: false, message: 'Server error' });
-  }
-});
-
-// ── GET /api/notifications/tokens ────────────────────────────────────────────
-// (Optional) Admin — list all active tokens for a user
-router.get('/tokens', authenticateToken, async (req, res) => {
-  try {
-    const tokens = await DeviceToken.find({
-      userId: req.user.id,
-      enabled: true,
-    }).select('token platform lastSeen');
-
-    return res.json({ success: true, tokens });
-  } catch (err) {
-    console.error('❌ Get tokens error:', err);
-    return res.status(500).json({ success: false, message: 'Server error' });
-  }
-});
+router.post('/register', authenticateToken, notificationController.register);
+router.delete('/unregister', authenticateToken, notificationController.unregister);
+router.get('/tokens', authenticateToken, notificationController.getTokens);
 
 export default router;

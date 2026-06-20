@@ -44,6 +44,7 @@ const authenticateToken = (req, res, next) => {
     req.user = {
       userId: process.env.DEV_AUTH_USER_ID,
       oid:    process.env.DEV_AUTH_USER_ID,
+      email:  process.env.DEV_AUTH_USER_EMAIL || 'dev@example.com',
       phone:  process.env.DEV_AUTH_USER_PHONE,
       role:   'customer',
       source: 'dev_bypass',
@@ -65,24 +66,30 @@ const authenticateToken = (req, res, next) => {
     return res.status(401).json({ success: false, message: 'Bearer token is empty' });
   }
 
-  // ── Debug decode ────────────────────────────────────────────────
+  // ── Debug decode (claims inspection) ────────────────────────────
+  // This logs claims for debugging, NOT the token itself (security)
   try {
     const decoded = jwt.decode(token, { complete: true });
-    console.log('================ TOKEN DEBUG ================');
-    console.log('HEADER:', decoded?.header);
-    console.log('AUD:',    decoded?.payload?.aud);
-    console.log('ISS:',    decoded?.payload?.iss);
-    console.log('OID:',    decoded?.payload?.oid);
-    console.log('SCP:',    decoded?.payload?.scp);
-    console.log('=============================================');
+    if (decoded && decoded.payload) {
+      console.log('================ TOKEN CLAIMS ================');
+      console.log('OID (User ID):',    decoded.payload.oid);
+      console.log('SUB (Fallback ID):', decoded.payload.sub);
+      console.log('EMAIL:',            decoded.payload.email);
+      console.log('PREFERRED_USERNAME:', decoded.payload.preferred_username);
+      console.log('IDP (Provider):',   decoded.payload.idp);
+      console.log('AUD (Audience):',   decoded.payload.aud);
+      console.log('ISS (Issuer):',     decoded.payload.iss);
+      console.log('EXP:',              new Date(decoded.payload.exp * 1000));
+      console.log('=============================================');
+    }
   } catch (e) {
-    console.error('Decode error:', e);
+    console.error('Decode error:', e.message);
   }
 
-  // ── Verify ──────────────────────────────────────────────────────
+  // ── Verify signature ────────────────────────────────────────────
   const verifyOptions = {
     algorithms: ['RS256'],
-    issuer: process.env.AZURE_AD_B2C_ISSUER,   // ← reads from .env
+    issuer: process.env.AZURE_AD_B2C_ISSUER,
     audience: process.env.AZURE_AD_B2C_CLIENT_ID,
     ignoreExpiration: false,
   };
@@ -106,15 +113,47 @@ const authenticateToken = (req, res, next) => {
       });
     }
 
+    // ──────────────────────────────────────────────────────────────
+    // BUG FIX: Use oid/sub (stable user ID), NOT email, as primary key
+    // 
+    // When multiple auth providers are enabled (Google, Apple, Facebook
+    // via Entra federation), the email format may vary, but oid/sub
+    // remains stable across all providers for the same user.
+    //
+    // Example:
+    //   Microsoft: oid = "12345678-1234-1234-1234-123456789012"
+    //   Google (via Entra): oid = "12345678-1234-1234-1234-123456789012"
+    //   Apple (via Entra): oid = "12345678-1234-1234-1234-123456789012"
+    //   Email format: "user@microsoft.com" vs "user@gmail.com" (VARIES)
+    //
+    // Always query/store by oid/sub. Email is profile data only.
+    // ──────────────────────────────────────────────────────────────
+
+    // Extract stable user ID from token
+    const userId = decoded.oid || decoded.sub;
+    if (!userId) {
+      console.error('❌ No oid/sub claim in token');
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid token: no user ID claim',
+      });
+    }
+
+    // Attach user info to request
+    // Use oid/sub as primary identifier
     req.user = {
-      userId: decoded.oid || decoded.sub,
-      oid:    decoded.oid || decoded.sub,
-      email:  decoded.email || decoded.preferred_username || null,
-      name:   decoded.name  || null,
-      role:   'customer',
+      userId: userId,              // Stable ID for DB queries
+      oid: userId,                 // Also store as oid for clarity
+      email: decoded.email || decoded.preferred_username || null,
+      name: decoded.name || null,
+      provider: decoded.idp || 'entra',  // Which provider: 'google', 'apple', 'facebook', etc.
+      role: 'customer',
       source: 'entra',
+      aud: decoded.aud,            // For debugging
+      iss: decoded.iss,            // For debugging
     };
 
+    console.log(`✅ User authenticated: ${req.user.userId} (provider: ${req.user.provider})`);
     next();
   });
 };

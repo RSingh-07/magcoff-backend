@@ -1,14 +1,5 @@
-import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
 import userRepository from '../repositories/userRepository.js';
-import Order from '../models/Order.js';
-
-const JWT_SECRET = process.env.JWT_SECRET || 'magcoff_secret';
-const JWT_EXPIRES = process.env.JWT_EXPIRES_IN || '7d';
-const SALT = parseInt(process.env.BCRYPT_SALT_ROUNDS || '10', 10);
-
-const sign = (id) =>
-  jwt.sign({ id }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
+import wishlistService from './wishlistService.js';
 
 const tierFor = (points) => {
   if (points >= 500) return 'Gold Member';
@@ -29,52 +20,6 @@ async function resolveUserByOid(oid) {
 }
 
 const userService = {
-  async register(phone, name, email, password) {
-    if (await userRepository.existsByPhone(phone)) {
-      throw new Error('Phone number already registered');
-    }
-
-    const hashed = await bcrypt.hash(password, SALT);
-
-    const user = await userRepository.create({
-      phone,
-      name,
-      email,
-      password: hashed,
-      createdAt: new Date(),
-    });
-
-    const plain = user.toObject ? user.toObject() : { ...user };
-
-    delete plain.password;
-
-    return {
-      user: plain,
-      token: sign(plain._id),
-    };
-  },
-
-  async login(phone, password) {
-    const user = await userRepository.findByPhone(phone);
-
-    if (!user) {
-      throw new Error('Invalid phone number or password');
-    }
-
-    const ok = await bcrypt.compare(password, user.password);
-
-    if (!ok) {
-      throw new Error('Invalid phone number or password');
-    }
-
-    const { password: _pw, ...safe } = user;
-
-    return {
-      user: safe,
-      token: sign(safe._id),
-    };
-  },
-
   async getProfile(oid) {
     console.log('👤 GET PROFILE START');
     console.log('OID:', oid);
@@ -83,34 +28,27 @@ const userService = {
 
     console.log('✅ USER FOUND:', user._id);
 
-    const userIdStr = user._id.toString();
+    // Known Issue #7 fix: previously this method ran its own inline
+    // Order.aggregate([...]) that matched BOTH string and ObjectId forms
+    // of userId, duplicating logic that already existed (and was more
+    // consistent) in userRepository.getOrderStats. Reusing the repository
+    // method removes the duplication and the now-unnecessary direct
+    // `Order` model import from this service.
+    console.log('📦 ORDER STATS START');
+    const { orderCount, totalSpent } = await userRepository.getOrderStats(user._id);
+    console.log('📦 ORDER STATS END');
 
-    console.log('📦 ORDER AGG START');
-
-    const orderAgg = await Order.aggregate([
-      {
-        $match: {
-          $or: [
-            { userId: userIdStr },
-            { userId: user._id },
-          ],
-        },
-      },
-      {
-        $group: {
-          _id: null,
-          count: { $sum: 1 },
-          total: { $sum: '$total' },
-        },
-      },
-    ]);
-
-    console.log('📦 ORDER AGG END');
-
-    const orderCount = orderAgg[0]?.count ?? 0;
-    const totalSpent = orderAgg[0]?.total ?? 0;
     const points = Math.floor(totalSpent / 10);
     const tier = tierFor(points);
+
+    // Known Issue #7 fix: wishlistCount was previously hardcoded to 0 and
+    // never queried the shopping_lists collection at all. It now reflects
+    // the user's real wishlist size via wishlistService, which itself
+    // resolves the same Azure OID → internal _id mapping used everywhere
+    // else in this codebase.
+    console.log('❤️  WISHLIST COUNT START');
+    const wishlistCount = await wishlistService.countByOid(oid);
+    console.log('❤️  WISHLIST COUNT END');
 
     console.log('✅ PROFILE COMPLETE');
 
@@ -124,7 +62,7 @@ const userService = {
       totalSpent: Math.round(totalSpent * 100) / 100,
       points,
       tier,
-      wishlistCount: 0,
+      wishlistCount,
     };
   },
 

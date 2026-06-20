@@ -9,12 +9,13 @@ import cors     from 'cors';
 import mongoose from 'mongoose';
 import authenticateToken from './middleware/authenticateToken.js';
 
-import productRoutes      from './routes/productRoutes.js';
-import userRoutes         from './routes/userRoutes.js';
-import cartRoutes         from './routes/cartRoutes.js';
-import orderRoutes        from './routes/orderRoutes.js';
-import notificationRoutes from './routes/notificationRoutes.js';
-import wishlistRoutes     from './routes/wishlistRoutes.js';
+import productRoutes        from './routes/productRoutes.js';
+import userRoutes           from './routes/userRoutes.js';
+import cartRoutes           from './routes/cartRoutes.js';
+import orderRoutes          from './routes/orderRoutes.js';
+import orderReceiptRoutes   from './routes/orderReceiptRoutes.js';
+import notificationRoutes   from './routes/notificationRoutes.js';
+import wishlistRoutes       from './routes/wishlistRoutes.js';
 
 const app  = express();
 const PORT = process.env.PORT || 8080;
@@ -68,7 +69,18 @@ if (process.env.NODE_ENV !== 'production') {
 // Public routes (no auth needed)
 app.use('/products', productRoutes);
 
+// Known Issue #2 fix: the public receipt-lookup route is mounted here,
+// UNPROTECTED, at the same /orders prefix as the protected orderRoutes
+// below. Express matches in registration order, so requests to
+// GET /orders/receipt/:orderId are handled by this router first and never
+// reach the authenticateToken middleware that guards the rest of /orders.
+app.use('/orders', orderReceiptRoutes);
+
 // Protected routes (auth required)
+// Known Issue #3 fix: authenticateToken is applied exactly once per router
+// here. userRoutes.js and cartRoutes.js no longer also call
+// router.use(authenticateToken) internally, removing the previous
+// double-verification on every request to /users/* and /cart/*.
 app.use('/users',             authenticateToken, userRoutes);
 app.use('/cart',              authenticateToken, cartRoutes);
 app.use('/orders',            authenticateToken, orderRoutes);
@@ -108,7 +120,9 @@ mongoose.connect(MONGODB_URI).then(() => {
     console.log(`📦  Products      → GET  http://localhost:${PORT}/products`);
     console.log(`👤  Profile       → GET  http://localhost:${PORT}/users/profile`);
     console.log(`🛒  Cart          → GET  http://localhost:${PORT}/cart`);
+    console.log(`🎟️   Apply coupon  → POST http://localhost:${PORT}/cart/apply-coupon`);
     console.log(`📋  Orders        → GET  http://localhost:${PORT}/orders`);
+    console.log(`🧾  Receipt       → GET  http://localhost:${PORT}/orders/receipt/:orderId  (public)`);
     console.log(`❤️   Wishlist      → GET  http://localhost:${PORT}/api/wishlist`);
     console.log(`🔔  Notifications → POST http://localhost:${PORT}/api/notifications/register`);
   });

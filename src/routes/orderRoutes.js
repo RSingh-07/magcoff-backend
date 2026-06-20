@@ -1,15 +1,16 @@
-import { Router }           from 'express';
-import orderController      from '../controllers/orderController.js';
-import authenticateToken    from '../middleware/authenticateToken.js';
+import { Router }      from 'express';
+import orderController from '../controllers/orderController.js';
 
 const router = Router();
 
-// GET /orders/receipt/:orderId — public (receipt link sharing)
-// All other order routes require authentication
-router.get('/receipt/:orderId', orderController.getReceipt);
+// All routes in this router are mounted behind authenticateToken in index.js
+// (see index.js — Known Issue #2 fix). The previously-public
+// GET /receipt/:orderId route has been moved to its own separate,
+// unprotected mount in index.js so it can actually be reached without a
+// token, which was the original intent but was being defeated by the
+// mount-level authenticateToken wrapping the whole orderRoutes router.
 
-// Protected routes
-router.get('/',   authenticateToken, orderController.getByUser);
-router.post('/',  authenticateToken, orderController.placeOrder);
+router.get('/',  orderController.getByUser);
+router.post('/', orderController.placeOrder);
 
 export default router;

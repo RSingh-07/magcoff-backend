@@ -3,6 +3,17 @@ import { generateSignalRCredentials, addUserToGroup } from '../services/signalRS
 
 const getUserId = (req) => req.user.oid || req.user.userId || req.user.sub;
 
+// Known Issue #4 fix helper: distinguishes client-input validation errors
+// (which should be 400) from genuine server/DB errors (500). cartService
+// now throws clear, recognizable messages for invalid quantities — we map
+// those specific messages to 400 here rather than blanket-500ing everything.
+function isValidationError(message) {
+  return (
+    message.includes('must be a positive whole number') ||
+    message.includes('must be a valid number')
+  );
+}
+
 const cartController = {
   async getCart(req, res) {
     try {
@@ -20,11 +31,12 @@ const cartController = {
         return res.status(400).json({ success: false, message: 'productId is required' });
       }
       const data = await cartService.addItem(
-        getUserId(req), productId, Number(quantity) || 1,
+        getUserId(req), productId, quantity === undefined ? 1 : quantity,
       );
       res.json({ success: true, data });
     } catch (err) {
-      res.status(500).json({ success: false, message: err.message });
+      const status = isValidationError(err.message) ? 400 : 500;
+      res.status(status).json({ success: false, message: err.message });
     }
   },
 
@@ -50,11 +62,12 @@ const cartController = {
         });
       }
       const data = await cartService.updateQuantity(
-        getUserId(req), productId, Number(quantity),
+        getUserId(req), productId, quantity,
       );
       res.json({ success: true, data });
     } catch (err) {
-      res.status(500).json({ success: false, message: err.message });
+      const status = isValidationError(err.message) ? 400 : 500;
+      res.status(status).json({ success: false, message: err.message });
     }
   },
 
@@ -67,7 +80,14 @@ const cartController = {
       const data = await cartService.applyCoupon(getUserId(req), couponCode);
       res.json({ success: true, data });
     } catch (err) {
-      res.status(500).json({ success: false, message: err.message });
+      // Known Issue #5 fix: invalid/expired/ineligible coupon codes are now
+      // client errors (400), not server errors (500).
+      const status = (
+        err.message === 'Invalid or inactive coupon code' ||
+        err.message === 'This coupon has expired' ||
+        err.message.startsWith('This coupon requires a minimum order value')
+      ) ? 400 : 500;
+      res.status(status).json({ success: false, message: err.message });
     }
   },
 
