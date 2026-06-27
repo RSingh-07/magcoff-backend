@@ -1,12 +1,12 @@
 import cartService from '../services/cartService.js';
-import { generateSignalRCredentials, addUserToGroup } from '../services/signalRService.js';
+import {
+  generateSignalRCredentials,
+  addUserToGroup,
+  broadcastCartUpdate,
+} from '../services/signalRService.js';
 
 const getUserId = (req) => req.user.oid || req.user.userId || req.user.sub;
 
-// Known Issue #4 fix helper: distinguishes client-input validation errors
-// (which should be 400) from genuine server/DB errors (500). cartService
-// now throws clear, recognizable messages for invalid quantities — we map
-// those specific messages to 400 here rather than blanket-500ing everything.
 function isValidationError(message) {
   return (
     message.includes('must be a positive whole number') ||
@@ -80,8 +80,6 @@ const cartController = {
       const data = await cartService.applyCoupon(getUserId(req), couponCode);
       res.json({ success: true, data });
     } catch (err) {
-      // Known Issue #5 fix: invalid/expired/ineligible coupon codes are now
-      // client errors (400), not server errors (500).
       const status = (
         err.message === 'Invalid or inactive coupon code' ||
         err.message === 'This coupon has expired' ||
@@ -96,11 +94,8 @@ const cartController = {
     try {
       const userId = getUserId(req);
       console.log('🔄 Negotiating SignalR for user:', userId);
-
       const credentials = generateSignalRCredentials(userId);
       console.log('✅ SignalR negotiation successful');
-
-      // Flutter expects: { url, accessToken }
       return res.status(200).json(credentials);
     } catch (err) {
       console.error('❌ SignalR negotiation failed:', err.message);
@@ -109,11 +104,6 @@ const cartController = {
   },
 
   // ── Link physical cart to this user's SignalR group ───────────────────────
-  // Body: { cartId: string, connectionId: string }
-  //
-  // connectionId is the real Azure SignalR WebSocket connection ID that
-  // Flutter reads from hubConnection.connectionId after connecting.
-  // It looks like: "abc123def456..." — NOT the user's Azure OID.
   async linkCart(req, res) {
     try {
       const { cartId, connectionId } = req.body;
@@ -129,20 +119,35 @@ const cartController = {
       console.log(`🔗 Linking cart ${cartId} for user ${userId}`);
       console.log(`🔌 SignalR connectionId: ${connectionId}`);
 
-      // Group name for this cart — Jetson will broadcast to this group
       const groupName = `cart-${cartId}`;
-
-      // Add the Flutter client's actual WebSocket connection to the group
       await addUserToGroup(connectionId, groupName);
 
       console.log(`✅ Connection ${connectionId} added to group ${groupName}`);
-      return res.status(200).json({
-        success: true,
-        cartId,
-        groupName,
-      });
+      return res.status(200).json({ success: true, cartId, groupName });
     } catch (err) {
       console.error('❌ Cart linking failed:', err.message);
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  },
+
+  // ── Jetson hardware pushes cart changes here (no auth) ────────────────────
+  async updateCart(req, res) {
+    try {
+      const { cartId, items, total } = req.body;
+
+      if (!cartId) {
+        return res.status(400).json({ success: false, message: 'cartId is required' });
+      }
+
+      const groupName = `cart-${cartId}`;
+      console.log(`📡 Broadcasting CartUpdated to group: ${groupName}`);
+
+      await broadcastCartUpdate(groupName, { cartId, items, total });
+
+      console.log(`✅ Broadcast sent to ${groupName}`);
+      return res.status(200).json({ success: true });
+    } catch (err) {
+      console.error('❌ Cart update broadcast failed:', err.message);
       return res.status(500).json({ success: false, message: err.message });
     }
   },

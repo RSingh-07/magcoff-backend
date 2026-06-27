@@ -1,8 +1,3 @@
-/**
- * Magcoff SmartCart Backend
- * Database: MagcoffDB
- */
-
 import 'dotenv/config';
 import express  from 'express';
 import cors     from 'cors';
@@ -16,6 +11,7 @@ import orderRoutes          from './routes/orderRoutes.js';
 import orderReceiptRoutes   from './routes/orderReceiptRoutes.js';
 import notificationRoutes   from './routes/notificationRoutes.js';
 import wishlistRoutes       from './routes/wishlistRoutes.js';
+import cartController       from './controllers/cartController.js';
 
 const app  = express();
 const PORT = process.env.PORT || 8080;
@@ -69,18 +65,15 @@ if (process.env.NODE_ENV !== 'production') {
 // Public routes (no auth needed)
 app.use('/products', productRoutes);
 
-// Known Issue #2 fix: the public receipt-lookup route is mounted here,
-// UNPROTECTED, at the same /orders prefix as the protected orderRoutes
-// below. Express matches in registration order, so requests to
-// GET /orders/receipt/:orderId are handled by this router first and never
-// reach the authenticateToken middleware that guards the rest of /orders.
+// Public receipt lookup
 app.use('/orders', orderReceiptRoutes);
 
+// ── Jetson hardware endpoint (no auth — device has no user token) ─────────────
+// Must be mounted BEFORE app.use('/cart', authenticateToken, cartRoutes)
+// otherwise the auth middleware would block the Jetson's requests.
+app.post('/cart/update', cartController.updateCart);
+
 // Protected routes (auth required)
-// Known Issue #3 fix: authenticateToken is applied exactly once per router
-// here. userRoutes.js and cartRoutes.js no longer also call
-// router.use(authenticateToken) internally, removing the previous
-// double-verification on every request to /users/* and /cart/*.
 app.use('/users',             authenticateToken, userRoutes);
 app.use('/cart',              authenticateToken, cartRoutes);
 app.use('/orders',            authenticateToken, orderRoutes);
@@ -125,6 +118,7 @@ mongoose.connect(MONGODB_URI).then(() => {
     console.log(`🧾  Receipt       → GET  http://localhost:${PORT}/orders/receipt/:orderId  (public)`);
     console.log(`❤️   Wishlist      → GET  http://localhost:${PORT}/api/wishlist`);
     console.log(`🔔  Notifications → POST http://localhost:${PORT}/api/notifications/register`);
+    console.log(`🤖  Jetson update → POST http://localhost:${PORT}/cart/update  (no auth)`);
   });
 }).catch((err) => {
   console.error('❌  MongoDB connection failed:', err.message);
