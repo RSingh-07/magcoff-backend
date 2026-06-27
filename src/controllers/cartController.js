@@ -4,6 +4,8 @@ import {
   addUserToGroup,
   broadcastCartUpdate,
 } from '../services/signalRService.js';
+import User from '../models/User.js';
+import cartRepository from '../repositories/cartRepository.js';
 
 const getUserId = (req) => req.user.oid || req.user.userId || req.user.sub;
 
@@ -115,15 +117,44 @@ const cartController = {
         return res.status(400).json({ success: false, message: 'connectionId is required' });
       }
 
-      const userId = getUserId(req);
-      console.log(`🔗 Linking cart ${cartId} for user ${userId}`);
+      const oid = getUserId(req);
+      console.log(`🔗 Linking cart ${cartId} for user ${oid}`);
       console.log(`🔌 SignalR connectionId: ${connectionId}`);
 
+      // 1. Resolve Azure OID → MongoDB user
+      const user = await User.findOne({ azureId: oid }).lean();
+      if (!user) {
+        return res.status(404).json({ success: false, message: 'User not found' });
+      }
+
+      // 2. Find or create active cart for this user
+      let cart = await cartRepository.findActiveByUserId(user._id);
+      if (!cart) {
+        cart = await cartRepository.create({
+          userId: user._id,
+          items: [],
+          subtotal: 0,
+          discount: 0,
+          total: 0,
+        });
+      }
+
+      // 3. Stamp cartId (physical cart QR) onto the MongoDB cart document
+      await cartRepository.updateById(cart._id, { physicalCartId: cartId });
+
+      // 4. Add Flutter client's WebSocket connection to SignalR group
       const groupName = `cart-${cartId}`;
       await addUserToGroup(connectionId, groupName);
 
       console.log(`✅ Connection ${connectionId} added to group ${groupName}`);
-      return res.status(200).json({ success: true, cartId, groupName });
+
+      // 5. Return initial cart state to Flutter
+      return res.status(200).json({
+        success:   true,
+        cartId,
+        groupName,
+        cart,             // ← initial cart state Flutter loads immediately
+      });
     } catch (err) {
       console.error('❌ Cart linking failed:', err.message);
       return res.status(500).json({ success: false, message: err.message });
