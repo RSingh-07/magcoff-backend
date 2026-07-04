@@ -12,6 +12,10 @@ const userRepository = {
       .lean();
   },
 
+  // BUG FIX: User schema's primary key is `_id` (the Azure oid/sub), not a
+  // separate `azureId` field — that field doesn't exist on the schema at all.
+  // This previously always queried a non-existent field and always returned
+  // null, meaning every existing user lookup silently failed.
   async findByAzureId(oid) {
     console.log('🔍 FIND USER START:', oid);
 

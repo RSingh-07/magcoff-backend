@@ -28,12 +28,6 @@ const userService = {
 
     console.log('✅ USER FOUND:', user._id);
 
-    // Known Issue #7 fix: previously this method ran its own inline
-    // Order.aggregate([...]) that matched BOTH string and ObjectId forms
-    // of userId, duplicating logic that already existed (and was more
-    // consistent) in userRepository.getOrderStats. Reusing the repository
-    // method removes the duplication and the now-unnecessary direct
-    // `Order` model import from this service.
     console.log('📦 ORDER STATS START');
     const { orderCount, totalSpent } = await userRepository.getOrderStats(user._id);
     console.log('📦 ORDER STATS END');
@@ -41,11 +35,6 @@ const userService = {
     const points = Math.floor(totalSpent / 10);
     const tier = tierFor(points);
 
-    // Known Issue #7 fix: wishlistCount was previously hardcoded to 0 and
-    // never queried the shopping_lists collection at all. It now reflects
-    // the user's real wishlist size via wishlistService, which itself
-    // resolves the same Azure OID → internal _id mapping used everywhere
-    // else in this codebase.
     console.log('❤️  WISHLIST COUNT START');
     const wishlistCount = await wishlistService.countByOid(oid);
     console.log('❤️  WISHLIST COUNT END');
@@ -57,6 +46,9 @@ const userService = {
       name: user.name,
       phone: user.phone ?? '',
       email: user.email ?? '',
+      // BUG FIX: `_id` IS the Azure oid on this schema — there is no
+      // separate `azureId` field, so reading user.azureId was always
+      // returning undefined.
       azureId: user._id,
       orderCount,
       totalSpent: Math.round(totalSpent * 100) / 100,
@@ -73,8 +65,11 @@ const userService = {
       return user;
     }
 
+    // BUG FIX: schema requires `_id` (String) — the field is named `_id`,
+    // not `azureId`. Passing `azureId` alone left `_id` undefined and
+    // triggered "Path `_id` is required." on save().
     user = await userRepository.create({
-      _id: azureId,   
+      _id: azureId,
       name,
       email: email || '',
       phone: phone || '',
