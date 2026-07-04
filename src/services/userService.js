@@ -57,7 +57,7 @@ const userService = {
       name: user.name,
       phone: user.phone ?? '',
       email: user.email ?? '',
-      azureId: user.azureId,
+      azureId: user._id,
       orderCount,
       totalSpent: Math.round(totalSpent * 100) / 100,
       points,
@@ -74,7 +74,7 @@ const userService = {
     }
 
     user = await userRepository.create({
-      azureId,
+      _id: azureId,   
       name,
       email: email || '',
       phone: phone || '',

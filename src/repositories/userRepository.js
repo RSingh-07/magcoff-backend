@@ -15,9 +15,7 @@ const userRepository = {
   async findByAzureId(oid) {
     console.log('🔍 FIND USER START:', oid);
 
-    const user = await User.findOne({
-      azureId: oid,
-    }).lean();
+    const user = await User.findById(oid).lean();
 
     console.log('🔍 FIND USER END:', user?._id || 'NOT FOUND');
 
