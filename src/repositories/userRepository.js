@@ -42,27 +42,50 @@ const userRepository = {
   // unique index on `phone` and throw E11000, permanently blocking
   // registration for a real, already-existing user.
   //
-  // This re-keys the User document under the new OID and re-points every
-  // collection that stores userId as a foreign key, so order history, cart,
-  // and wishlist all survive the OID change instead of being orphaned under
-  // the old, now-unreachable `_id`.
+  // BUG FIX (2nd pass): the first version of this function created the new
+  // document BEFORE deleting the old one. Since both documents briefly held
+  // the same `phone` value at that instant, the unique index on `phone`
+  // rejected the insert — the exact same E11000 error, just one step later.
+  // This now performs delete-then-insert inside a single transaction, so
+  // there is never a moment where two User documents share a phone number,
+  // and if anything fails partway, the whole migration rolls back instead
+  // of leaving the account half-migrated or lost.
   async reassignUserId(oldId, newId) {
     const oldUser = await User.findById(oldId).lean();
     if (!oldUser) return null;
 
     const { _id, ...rest } = oldUser;
 
-    const newUser = await new User({ _id: newId, ...rest }).save();
+    const session = await User.startSession();
+    try {
+      let newUser;
 
-    await Promise.all([
-      Order.updateMany({ userId: oldId }, { $set: { userId: newId } }),
-      Cart.updateMany({ userId: oldId }, { $set: { userId: newId } }),
-      WishlistItem.updateMany({ userId: oldId }, { $set: { userId: newId } }),
-    ]);
+      await session.withTransaction(async () => {
+        await User.deleteOne({ _id: oldId }).session(session);
 
-    await User.deleteOne({ _id: oldId });
+        const created = await User.create([{ _id: newId, ...rest }], { session });
+        newUser = created[0];
 
-    return newUser.toObject();
+        await Order.updateMany(
+          { userId: oldId },
+          { $set: { userId: newId } }
+        ).session(session);
+
+        await Cart.updateMany(
+          { userId: oldId },
+          { $set: { userId: newId } }
+        ).session(session);
+
+        await WishlistItem.updateMany(
+          { userId: oldId },
+          { $set: { userId: newId } }
+        ).session(session);
+      });
+
+      return newUser.toObject();
+    } finally {
+      await session.endSession();
+    }
   },
 
   async getOrderStats(userId) {
