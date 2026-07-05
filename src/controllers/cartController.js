@@ -32,11 +32,16 @@ const cartController = {
       if (!productId) {
         return res.status(400).json({ success: false, message: 'productId is required' });
       }
-      const data = await cartService.addItem(
-        getUserId(req), productId, quantity === undefined ? 1 : quantity,
-      );
+      const userId = getUserId(req);
+      const qty = quantity === undefined ? 1 : quantity;
+      console.log(`🛒 ADD ITEM START: user=${userId} product=${productId} qty=${qty}`);
+
+      const data = await cartService.addItem(userId, productId, qty);
+
+      console.log(`✅ ADD ITEM SUCCESS: user=${userId} items=${data.items?.length ?? 'n/a'} total=${data.total ?? 'n/a'}`);
       res.json({ success: true, data });
     } catch (err) {
+      console.error(`❌ ADD ITEM FAILED: ${err.message}`);
       const status = isValidationError(err.message) ? 400 : 500;
       res.status(status).json({ success: false, message: err.message });
     }
@@ -48,9 +53,15 @@ const cartController = {
       if (!productId) {
         return res.status(400).json({ success: false, message: 'productId is required' });
       }
-      const data = await cartService.removeItem(getUserId(req), productId);
+      const userId = getUserId(req);
+      console.log(`🗑️  REMOVE ITEM START: user=${userId} product=${productId}`);
+
+      const data = await cartService.removeItem(userId, productId);
+
+      console.log(`✅ REMOVE ITEM SUCCESS: user=${userId} items=${data.items?.length ?? 'n/a'} total=${data.total ?? 'n/a'}`);
       res.json({ success: true, data });
     } catch (err) {
+      console.error(`❌ REMOVE ITEM FAILED: ${err.message}`);
       res.status(500).json({ success: false, message: err.message });
     }
   },
@@ -63,11 +74,15 @@ const cartController = {
           success: false, message: 'productId and quantity are required',
         });
       }
-      const data = await cartService.updateQuantity(
-        getUserId(req), productId, quantity,
-      );
+      const userId = getUserId(req);
+      console.log(`🔁 UPDATE QTY START: user=${userId} product=${productId} qty=${quantity}`);
+
+      const data = await cartService.updateQuantity(userId, productId, quantity);
+
+      console.log(`✅ UPDATE QTY SUCCESS: user=${userId} items=${data.items?.length ?? 'n/a'} total=${data.total ?? 'n/a'}`);
       res.json({ success: true, data });
     } catch (err) {
+      console.error(`❌ UPDATE QTY FAILED: ${err.message}`);
       const status = isValidationError(err.message) ? 400 : 500;
       res.status(status).json({ success: false, message: err.message });
     }
@@ -79,9 +94,15 @@ const cartController = {
       if (!couponCode) {
         return res.status(400).json({ success: false, message: 'couponCode is required' });
       }
-      const data = await cartService.applyCoupon(getUserId(req), couponCode);
+      const userId = getUserId(req);
+      console.log(`🎟️  APPLY COUPON START: user=${userId} code=${couponCode}`);
+
+      const data = await cartService.applyCoupon(userId, couponCode);
+
+      console.log(`✅ APPLY COUPON SUCCESS: user=${userId} discount=${data.discount ?? 'n/a'} total=${data.total ?? 'n/a'}`);
       res.json({ success: true, data });
     } catch (err) {
+      console.error(`❌ APPLY COUPON FAILED: ${err.message}`);
       const status = (
         err.message === 'Invalid or inactive coupon code' ||
         err.message === 'This coupon has expired' ||
