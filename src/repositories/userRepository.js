@@ -50,11 +50,23 @@ const userRepository = {
   // there is never a moment where two User documents share a phone number,
   // and if anything fails partway, the whole migration rolls back instead
   // of leaving the account half-migrated or lost.
-  async reassignUserId(oldId, newId) {
+  //
+  // BUG FIX (3rd pass): previously this spread the OLD document's fields
+  // (`...rest`) onto the new one unchanged, which meant a user re-authenticating
+  // with a different email (e.g. after switching Microsoft/Google accounts,
+  // or picking a different account via Prompt.selectAccount) would keep
+  // seeing their original email forever — the migration preserved identity
+  // continuity (orders/cart/wishlist) but silently discarded the fresh
+  // claims from the new token. `updatedFields` now lets the caller pass the
+  // latest name/email from the token so they win over the stale stored
+  // values, while everything else (points, address, preferences, etc.)
+  // still carries over from the old document.
+  async reassignUserId(oldId, newId, updatedFields = {}) {
     const oldUser = await User.findById(oldId).lean();
     if (!oldUser) return null;
 
     const { _id, ...rest } = oldUser;
+    const merged = { ...rest, ...updatedFields };
 
     const session = await User.startSession();
     try {
@@ -63,7 +75,7 @@ const userRepository = {
       await session.withTransaction(async () => {
         await User.deleteOne({ _id: oldId }).session(session);
 
-        const created = await User.create([{ _id: newId, ...rest }], { session });
+        const created = await User.create([{ _id: newId, ...merged }], { session });
         newUser = created[0];
 
         await Order.updateMany(
@@ -86,6 +98,22 @@ const userRepository = {
     } finally {
       await session.endSession();
     }
+  },
+
+  // NEW: lets a user update their own email/name/phone in place, without
+  // going through the OID-reassignment path (used by the account "Edit
+  // profile" screen — no identity change involved, just editing fields).
+  async updateProfileFields(id, fields) {
+    const allowed = {};
+    if (typeof fields.name === 'string') allowed.name = fields.name.trim();
+    if (typeof fields.phone === 'string') allowed.phone = fields.phone.trim();
+    if (typeof fields.email === 'string') allowed.email = fields.email.trim().toLowerCase();
+
+    return User.findByIdAndUpdate(
+      id,
+      { $set: allowed },
+      { new: true, runValidators: true }
+    ).lean();
   },
 
   async getOrderStats(userId) {

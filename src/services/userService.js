@@ -93,7 +93,16 @@ const userService = {
         const existing = await userRepository.findByPhone(phone);
         if (!existing) throw err; // shouldn't happen, but don't swallow silently
 
-        const migrated = await userRepository.reassignUserId(existing._id, azureId);
+        // BUG FIX: previously reassignUserId only carried over the OLD
+        // document's fields, so a re-login with a different email (e.g.
+        // after switching Microsoft/Google accounts) kept showing the
+        // original email forever. Pass the FRESH claims from this token
+        // through so they win over the stale stored values.
+        const migrated = await userRepository.reassignUserId(
+          existing._id,
+          azureId,
+          { name, email }
+        );
         if (!migrated) throw err;
 
         console.log(`✅ Migrated user ${existing._id} → ${azureId}`);
@@ -102,6 +111,31 @@ const userService = {
 
       throw err;
     }
+  },
+
+  // NEW: lets the account screen edit name/phone/email directly, without
+  // needing a fresh Azure login/OID change. Use this for a simple "edit
+  // profile" flow; use the Azure re-login + reassignUserId path above when
+  // the identity itself (the signed-in Microsoft/Google account) changes.
+  async updateProfile(oid, { name, phone, email }) {
+    await resolveUserByOid(oid); // throws if the user doesn't exist
+
+    const updated = await userRepository.updateProfileFields(oid, {
+      name,
+      phone,
+      email,
+    });
+
+    if (!updated) {
+      throw new Error(`Failed to update profile for OID: ${oid}`);
+    }
+
+    return {
+      _id: updated._id,
+      name: updated.name,
+      phone: updated.phone ?? '',
+      email: updated.email ?? '',
+    };
   },
 };
 
