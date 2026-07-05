@@ -62,6 +62,8 @@ const orderService = {
     for (let attempt = 0; attempt < MAX_ORDER_ID_RETRIES; attempt += 1) {
       try {
         const orderId = await generateOrderId();
+        console.log(`🧮 Generated orderId: ${orderId} (attempt ${attempt + 1})`);
+
         order = await orderRepository.create({
           orderId,
           userId,
@@ -80,6 +82,7 @@ const orderService = {
         break;
       } catch (err) {
         lastErr = err;
+        console.error(`⚠️ Order creation attempt ${attempt + 1} failed: ${err.message}`);
         // Mongo duplicate key error code
         if (err.code !== 11000) throw err;
       }
@@ -87,7 +90,22 @@ const orderService = {
 
     if (lastErr) throw lastErr;
 
+    console.log(`📦 Marking cart ${cart._id} as checked out`);
     await cartRepository.markCheckedOut(cart._id);
+
+    // FIX: markCheckedOut() only flips status on the old cart — it never
+    // leaves the user with a fresh active cart. Without this, the next
+    // getCart() call finds no active cart for the user, so the app either
+    // errors or keeps showing stale data instead of an empty cart.
+    console.log(`🆕 Creating fresh empty cart for user ${userId}`);
+    await cartRepository.create({
+      userId,
+      items: [],
+      subtotal: 0,
+      discount: 0,
+      total: 0,
+    });
+
     return order;
   },
 
