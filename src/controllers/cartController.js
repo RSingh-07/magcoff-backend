@@ -191,12 +191,14 @@ const cartController = {
       if (!cartId) {
         return res.status(400).json({ success: false, message: 'cartId is required' });
       }
-      if (!connectionId) {
-        return res.status(400).json({ success: false, message: 'connectionId is required' });
-      }
+      // NOTE: connectionId is now optional. If the SignalR connection had
+      // already dropped/reconnected client-side by the time this fires
+      // (auto-reconnect resets it to null), we still want to clear
+      // physicalCartId in Mongo — that part doesn't depend on SignalR at all.
+      // We just skip the group-removal step when it's missing.
 
       const oid = getUserId(req);
-      console.log(`🔓 Unlinking cart ${cartId} for user ${oid}`);
+      console.log(`🔓 Unlinking cart ${cartId} for user ${oid} (connectionId=${connectionId || 'none'})`);
 
       // 1. Resolve Azure OID → MongoDB user
       const user = await User.findOne({ azureId: oid }).lean();
@@ -214,12 +216,18 @@ const cartController = {
       if (cart) {
         await cartRepository.updateById(cart._id, { physicalCartId: null });
         console.log(`✅ Cleared physicalCartId on cart ${cart._id}`);
+      } else {
+        console.warn(`⚠️ No cart found with physicalCartId=${cartId} — nothing to clear`);
       }
 
-      // 3. Remove this connection from the SignalR group
-      const groupName = `cart-${cartId}`;
-      await removeUserFromGroup(connectionId, groupName);
-      console.log(`✅ Connection ${connectionId} removed from group ${groupName}`);
+      // 3. Remove this connection from the SignalR group, only if we have one
+      if (connectionId) {
+        const groupName = `cart-${cartId}`;
+        await removeUserFromGroup(connectionId, groupName);
+        console.log(`✅ Connection ${connectionId} removed from group ${groupName}`);
+      } else {
+        console.warn('⚠️ No connectionId provided — skipping SignalR group removal');
+      }
 
       return res.status(200).json({ success: true });
     } catch (err) {
