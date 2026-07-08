@@ -20,7 +20,15 @@ const cartRepository = {
   // This looks up the cart regardless of status so the cleanup actually
   // lands on the right document.
   async findAnyByPhysicalCartId(physicalCartId) {
-    return Cart.findOne({ physicalCartId }).lean();
+    // FIX: multiple historical checked-out carts can share the same
+    // physicalCartId (e.g. from before this cleanup existed, or simply
+    // repeat use of the same trolley). findOne with no sort returns
+    // whichever document Mongo happens to hand back first — not
+    // necessarily the most recent one — so unlink could end up clearing
+    // an old cart instead of the one from this checkout. Sorting by
+    // createdAt descending guarantees we always target the most recently
+    // linked cart.
+    return Cart.findOne({ physicalCartId }).sort({ createdAt: -1 }).lean();
   },
 
   async create(data)                 { return new Cart(data).save(); },
