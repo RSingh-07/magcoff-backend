@@ -204,8 +204,13 @@ const cartController = {
         return res.status(404).json({ success: false, message: 'User not found' });
       }
 
-      // 2. Find the active cart and clear its physical cart binding
-      const cart = await cartRepository.findActiveByUserId(user._id);
+      // 2. Find the cart bound to this physical trolley directly — NOT via
+      //    findActiveByUserId. By the time unlinkCart runs after checkout,
+      //    placeOrder() has already marked this cart 'checked_out' and created
+      //    a new active cart for the user, so findActiveByUserId would return
+      //    the wrong (new, empty) cart and never clear physicalCartId on the
+      //    cart that actually had it.
+      const cart = await cartRepository.findByPhysicalCartId(cartId);
       if (cart) {
         await cartRepository.updateById(cart._id, { physicalCartId: null });
         console.log(`✅ Cleared physicalCartId on cart ${cart._id}`);
