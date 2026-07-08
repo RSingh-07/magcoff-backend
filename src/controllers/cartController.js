@@ -2,6 +2,7 @@ import cartService from '../services/cartService.js';
 import {
   generateSignalRCredentials,
   addUserToGroup,
+  removeUserFromGroup,
   broadcastCartUpdate,
 } from '../services/signalRService.js';
 import User from '../models/User.js';
@@ -178,6 +179,47 @@ const cartController = {
       });
     } catch (err) {
       console.error('❌ Cart linking failed:', err.message);
+      return res.status(500).json({ success: false, message: err.message });
+    }
+  },
+
+  // ── Unlink cart after checkout — cleans up SignalR + Mongo state ──────────
+  async unlinkCart(req, res) {
+    try {
+      const { cartId, connectionId } = req.body;
+
+      if (!cartId) {
+        return res.status(400).json({ success: false, message: 'cartId is required' });
+      }
+      if (!connectionId) {
+        return res.status(400).json({ success: false, message: 'connectionId is required' });
+      }
+
+      const oid = getUserId(req);
+      console.log(`🔓 Unlinking cart ${cartId} for user ${oid}`);
+
+      // 1. Resolve Azure OID → MongoDB user
+      const user = await User.findOne({ azureId: oid }).lean();
+      if (!user) {
+        return res.status(404).json({ success: false, message: 'User not found' });
+      }
+
+      // 2. Find the active cart and clear its physical cart binding
+      const cart = await cartRepository.findActiveByUserId(user._id);
+      if (cart) {
+        await cartRepository.updateById(cart._id, { physicalCartId: null });
+        console.log(`✅ Cleared physicalCartId on cart ${cart._id}`);
+      }
+
+      // 3. Remove this connection from the SignalR group
+      const groupName = `cart-${cartId}`;
+      await removeUserFromGroup(connectionId, groupName);
+      console.log(`✅ Connection ${connectionId} removed from group ${groupName}`);
+
+      return res.status(200).json({ success: true });
+    } catch (err) {
+      console.error('❌ Cart unlinking failed:', err.message);
+      // Non-fatal — don't block the user on cleanup failure
       return res.status(500).json({ success: false, message: err.message });
     }
   },

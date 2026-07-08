@@ -35,6 +35,11 @@ const cartSchema = new mongoose.Schema(
       enum:    ['active', 'checked_out', 'abandoned'],
     },
 
+    // Binds this Mongo cart to the physical trolley's QR-encoded ID.
+    // Set on /cart/link, cleared on /cart/unlink so the trolley is
+    // free for the next shopper.
+    physicalCartId: { type: String, default: null },
+
     // Embedded items — bounded by physical cart capacity
     items: { type: [cartItemSchema], default: [] },
 

@@ -64,6 +64,25 @@ export async function addUserToGroup(connectionId, groupName) {
   }
 }
 
+// ── Used by unlinkCart controller to clean up after checkout ──────────────────
+
+export async function removeUserFromGroup(connectionId, groupName) {
+  const { Endpoint, AccessKey, hubName } = getSignalRConfig();
+
+  const url = `${Endpoint}/api/v1/hubs/${hubName}/groups/${groupName}/connections/${connectionId}`;
+  const token = generateServiceToken(url, AccessKey);
+
+  const response = await fetch(url, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`removeUserFromGroup failed (${response.status}): ${body}`);
+  }
+}
+
 // ── Used by Jetson hardware endpoint to push updates to Flutter ───────────────
 
 export async function broadcastCartUpdate(groupName, cartData) {
