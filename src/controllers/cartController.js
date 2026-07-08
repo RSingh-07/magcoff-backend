@@ -233,6 +233,28 @@ const cartController = {
         return res.status(400).json({ success: false, message: 'cartId is required' });
       }
 
+      // 1. Persist to MongoDB first — find the cart bound to this physical
+      //    trolley (set during /cart/link) and write the new items/total.
+      //    Without this, the app's live UI updates from the broadcast alone
+      //    but the real Cart document stays empty, so checkout later fails
+      //    with "Cart is empty".
+      const cart = await cartRepository.findByPhysicalCartId(cartId);
+      if (cart) {
+        const safeItems = Array.isArray(items) ? items : [];
+        const subtotal  = safeItems.reduce((sum, i) => sum + (i.lineTotal ?? 0), 0);
+        const safeTotal = total ?? Math.max(0, subtotal - (cart.discount || 0));
+
+        await cartRepository.updateById(cart._id, {
+          items: safeItems,
+          subtotal,
+          total: safeTotal,
+        });
+        console.log(`✅ Cart ${cart._id} persisted with ${safeItems.length} item(s), total=${safeTotal}`);
+      } else {
+        console.warn(`⚠️ No active cart found for physicalCartId=${cartId} — broadcasting only, nothing persisted`);
+      }
+
+      // 2. Broadcast the live update to any connected app
       const groupName = `cart-${cartId}`;
       console.log(`📡 Broadcasting CartUpdated to group: ${groupName}`);
 
@@ -241,7 +263,7 @@ const cartController = {
       console.log(`✅ Broadcast sent to ${groupName}`);
       return res.status(200).json({ success: true });
     } catch (err) {
-      console.error('❌ Cart update broadcast failed:', err.message);
+      console.error('❌ Cart update failed:', err.message);
       return res.status(500).json({ success: false, message: err.message });
     }
   },
