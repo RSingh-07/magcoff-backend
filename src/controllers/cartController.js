@@ -191,11 +191,10 @@ const cartController = {
       if (!cartId) {
         return res.status(400).json({ success: false, message: 'cartId is required' });
       }
-      // NOTE: connectionId is now optional. If the SignalR connection had
-      // already dropped/reconnected client-side by the time this fires
-      // (auto-reconnect resets it to null), we still want to clear
-      // physicalCartId in Mongo — that part doesn't depend on SignalR at all.
-      // We just skip the group-removal step when it's missing.
+      // connectionId is optional — if the SignalR connection had already
+      // dropped/reconnected client-side by the time this fires, we still
+      // want to clear physicalCartId in Mongo. We just skip the
+      // group-removal step when it's missing.
 
       const oid = getUserId(req);
       console.log(`🔓 Unlinking cart ${cartId} for user ${oid} (connectionId=${connectionId || 'none'})`);
@@ -206,13 +205,15 @@ const cartController = {
         return res.status(404).json({ success: false, message: 'User not found' });
       }
 
-      // 2. Find the cart bound to this physical trolley directly — NOT via
-      //    findActiveByUserId. By the time unlinkCart runs after checkout,
-      //    placeOrder() has already marked this cart 'checked_out' and created
-      //    a new active cart for the user, so findActiveByUserId would return
-      //    the wrong (new, empty) cart and never clear physicalCartId on the
-      //    cart that actually had it.
-      const cart = await cartRepository.findByPhysicalCartId(cartId);
+      // 2. Find the cart bound to this physical trolley — regardless of
+      //    status. FIX: this previously used findByPhysicalCartId, which
+      //    filters status: 'active'. By the time unlinkCart runs after
+      //    checkout, placeOrder() has already marked this cart
+      //    'checked_out', so that active-only lookup silently matched
+      //    nothing and physicalCartId was never actually cleared, even
+      //    though the endpoint still returned success. findAnyByPhysicalCartId
+      //    has no status filter, so it correctly finds the checked-out cart.
+      const cart = await cartRepository.findAnyByPhysicalCartId(cartId);
       if (cart) {
         await cartRepository.updateById(cart._id, { physicalCartId: null });
         console.log(`✅ Cleared physicalCartId on cart ${cart._id}`);
